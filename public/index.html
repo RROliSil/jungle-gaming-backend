@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🌴 Jungle Gaming — Arena Agnóstica (NestJS + MikroORM + Postgres + WS)</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg: #0b131e;
+      --card: #131f30;
+      --border: #233652;
+      --primary: #10b981;
+      --primary-hover: #059669;
+      --accent: #3b82f6;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      background: var(--card); border: 1px solid var(--border);
+      padding: 16px 24px; border-radius: 12px; margin-bottom: 20px;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: rgba(16, 185, 129, 0.15); color: var(--primary); border: 1px solid var(--primary);
+    }
+    .grid {
+      display: grid; grid-template-columns: 380px 1fr 380px; gap: 20px;
+    }
+    @media (max-width: 1200px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 14px;
+    }
+    h2 { font-size: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    .sql-tag { font-size: 11px; background: #1e293b; color: #38bdf8; padding: 2px 8px; border-radius: 6px; font-family: monospace; white-space: nowrap; }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input, select {
+      width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: #0f172a; color: var(--text); font-size: 14px;
+    }
+    button {
+      padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer;
+      font-weight: 600; font-size: 13px; transition: 0.15s; white-space: nowrap;
+    }
+    .btn-primary { background: var(--primary); color: #042f2e; }
+    .btn-primary:hover { background: var(--primary-hover); color: #fff; }
+    .btn-accent { background: var(--accent); color: #fff; }
+    .btn-danger { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid var(--danger); padding: 4px 8px; font-size: 11px; }
+    .btn-edit { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid var(--warning); padding: 4px 8px; font-size: 11px; }
+    .list-item {
+      background: #0f172a; border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    .list-item.active { border-color: var(--primary); background: rgba(16, 185, 129, 0.08); }
+    .choice-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .choice-btn {
+      padding: 14px; border-radius: 10px; border: 2px solid var(--border);
+      background: #0f172a; color: var(--text); font-size: 15px; font-weight: 700;
+    }
+    .choice-btn.selected { border-color: var(--primary); background: rgba(16, 185, 129, 0.2); color: var(--primary); }
+    .result-box {
+      background: #0f172a; border: 2px dashed var(--border); border-radius: 12px;
+      padding: 18px; text-align: center;
+    }
+    .result-box.won { border-color: var(--primary); background: rgba(16, 185, 129, 0.1); }
+    .result-box.lost { border-color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+    .log-box {
+      background: #060b11; border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px; height: 220px; overflow-y: auto; overflow-x: hidden; font-family: monospace; font-size: 12px;
+    }
+    .log-entry { margin-bottom: 6px; border-bottom: 1px solid #162235; padding-bottom: 4px; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 style="font-size: 20px;">🌴 Jungle Gaming — Plataforma Agnóstica de Jogos</h1>
+      <p style="font-size: 13px; color: var(--muted);">
+        NestJS + TypeScript • MikroORM + PostgreSQL • REST API (CRUD) • WebSockets (Socket.IO)
+      </p>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span id="wsStatus" class="badge">⚡ Conectando WS...</span>
+      <span id="onlineBadge" class="badge" style="background: rgba(59,130,246,0.15); color: #60a5fa; border-color: #3b82f6;">👥 Online: 1</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- COLUNA 1: CRUD DE JOGADORES E JOGOS -->
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div class="card">
+        <h2>
+          <span>👤 CRUD de Jogadores (Carteira)</span>
+          <span class="sql-tag">REST ↔ SQL</span>
+        </h2>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div>
+            <label>Username</label>
+            <input id="newUsername" placeholder="ex: joao_gamer" />
+          </div>
+          <div>
+            <label>Saldo Inicial (R$)</label>
+            <input id="newBalance" type="number" value="1000" />
+          </div>
+        </div>
+        <div>
+          <label>E-mail</label>
+          <input id="newEmail" placeholder="joao@junglegaming.com" />
+        </div>
+        <button class="btn-primary" onclick="createPlayer()">
+          ➕ Criar Jogador (POST /players → INSERT)
+        </button>
+
+        <div style="margin-top: 6px;">
+          <label>Jogadores Cadastrados (Clique para selecionar):</label>
+          <div id="playersList" style="display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto;"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <span>🎮 Catálogo de Jogos (CRUD)</span>
+          <span class="sql-tag">Agnóstico</span>
+        </h2>
+        <div id="gamesList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+    </div>
+
+    <!-- COLUNA 2: ARENA DE JOGO (PAR OU ÍMPAR & OUTROS JOGOS) -->
+    <div class="card">
+      <h2>
+        <span>🎲 Arena em Tempo Real (WebSocket / REST)</span>
+        <span class="sql-tag">Event: play_round</span>
+      </h2>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid var(--border);">
+        <div>
+          <span style="font-size: 12px; color: var(--muted);">Jogador Ativo:</span>
+          <div id="activePlayerName" style="font-weight: 700; font-size: 15px;">Carregando...</div>
+        </div>
+        <div style="text-align: right;">
+          <span style="font-size: 12px; color: var(--muted);">Saldo na Carteira:</span>
+          <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+            <div id="activePlayerBalance" style="font-weight: 800; font-size: 18px; color: var(--primary);">R$ 0.00</div>
+            <button class="btn-edit" onclick="quickTopUp()">+R$ 500</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label>Escolha o Jogo do Catálogo (Motor Agnóstico):</label>
+        <select id="gameSelector" onchange="onGameChange()"></select>
+      </div>
+
+      <!-- CONTROLES DO JOGO PAR OU ÍMPAR -->
+      <div id="evenOddControls" style="display: flex; flex-direction: column; gap: 12px;">
+        <label>1. Escolha PAR (EVEN) ou ÍMPAR (ODD):</label>
+        <div class="choice-group">
+          <button id="btnEven" class="choice-btn selected" onclick="selectParity('EVEN')">✌️ PAR (EVEN)</button>
+          <button id="btnOdd" class="choice-btn" onclick="selectParity('ODD')">☝️ ÍMPAR (ODD)</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label>2. Seu Número (0 a 10):</label>
+            <input id="playerNumber" type="number" min="0" max="10" value="4" />
+          </div>
+          <div>
+            <label>3. Valor da Aposta (R$):</label>
+            <input id="betAmount" type="number" min="1" max="500" value="50" />
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTROLES DO JOGO CARA OU COROA (PROVA DO SISTEMA AGNÓSTICO) -->
+      <div id="coinFlipControls" style="display: none; flex-direction: column; gap: 12px;">
+        <label>1. Escolha CARA (HEADS) ou COROA (TAILS):</label>
+        <div class="choice-group">
+          <button id="btnHeads" class="choice-btn selected" onclick="selectCoin('HEADS')">👑 CARA (HEADS)</button>
+          <button id="btnTails" class="choice-btn" onclick="selectCoin('TAILS')">🪙 COROA (TAILS)</button>
+        </div>
+        <div>
+          <label>2. Valor da Aposta (R$):</label>
+          <input id="betAmountCoin" type="number" min="1" max="500" value="50" />
+        </div>
+      </div>
+
+      <!-- CONTROLES DO JOGO DADOS 1-100 (3º MOTOR AGNÓSTICO) -->
+      <div id="diceControls" style="display: none; flex-direction: column; gap: 12px;">
+        <label>1. Escolha se o Dado (1 a 100) cairá ACIMA ou ATÉ 50:</label>
+        <div class="choice-group">
+          <button id="btnOver" class="choice-btn selected" onclick="selectDice('OVER')">📈 ACIMA DE 50 (OVER)</button>
+          <button id="btnUnder" class="choice-btn" onclick="selectDice('UNDER')">📉 ATÉ 50 (UNDER)</button>
+        </div>
+        <div>
+          <label>2. Valor da Aposta (R$):</label>
+          <input id="betAmountDice" type="number" min="1" max="500" value="50" />
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 4px;">
+        <button class="btn-primary" style="font-size: 15px; padding: 14px;" onclick="playViaWebSocket()">
+          ⚡ Jogar em Tempo Real (WebSocket)
+        </button>
+        <button class="btn-accent" onclick="playViaRest()">
+          🌐 Jogar via REST (POST)
+        </button>
+      </div>
+
+      <!-- RESULTADO DA RODADA -->
+      <div id="resultBox" class="result-box">
+        <div style="font-size: 14px; color: var(--muted);">Faça sua aposta acima para iniciar uma partida!</div>
+      </div>
+    </div>
+
+    <!-- COLUNA 3: LIVE FEED WEBSOCKET & HISTÓRICO NO BANCO -->
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <div class="card">
+        <h2>
+          <span>📡 Inspector WebSocket (Tempo Real)</span>
+          <span class="sql-tag">Socket.IO</span>
+        </h2>
+        <div id="wsLogs" class="log-box"></div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <span>📜 Histórico no Banco (game_rounds)</span>
+          <span class="sql-tag">SELECT / DELETE</span>
+        </h2>
+        <div id="roundsHistory" style="display: flex; flex-direction: column; gap: 8px; max-height: 290px; overflow-y: auto;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let players = [];
+    let games = [];
+    let selectedPlayerId = null;
+    let selectedParity = 'EVEN';
+    let selectedCoin = 'HEADS';
+    let selectedDice = 'OVER';
+
+    // Conecta ao GameGateway via Socket.IO
+    const socket = io();
+
+    function addWsLog(event, data) {
+      const box = document.getElementById('wsLogs');
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      const time = new Date().toLocaleTimeString();
+      div.innerHTML = `<span style="color:#10b981">[${time}]</span> <strong style="color:#60a5fa">${event}</strong>: ${JSON.stringify(data)}`;
+      box.prepend(div);
+    }
+
+    socket.on('connect', () => {
+      document.getElementById('wsStatus').textContent = '🟢 WebSocket Conectado';
+      addWsLog('connect', { socketId: socket.id });
+      socket.emit('join_game', { gameSlug: 'even-odd' });
+    });
+
+    socket.on('online_count', (data) => {
+      document.getElementById('onlineBadge').textContent = `👥 Online: ${data.online}`;
+    });
+
+    socket.on('joined_game', (data) => {
+      addWsLog('joined_game', data);
+    });
+
+    socket.on('round_result', (result) => {
+      addWsLog('round_result', { status: result.status, payout: result.payoutAmount, result: result.resultPayload });
+      renderRoundResult(result);
+    });
+
+    socket.on('wallet_updated', (wallet) => {
+      addWsLog('wallet_updated', wallet);
+      loadPlayers();
+    });
+
+    socket.on('live_bets_feed', () => {
+      loadHistory();
+    });
+
+    socket.on('game_error', (err) => {
+      addWsLog('game_error', err);
+      alert('Erro: ' + err.message);
+    });
+
+    // ===================== CRUD JOGADORES =====================
+    async function loadPlayers() {
+      const res = await fetch('/players');
+      players = await res.json();
+      if (!selectedPlayerId && players.length > 0) {
+        selectedPlayerId = players[0].id;
+      }
+      renderPlayers();
+    }
+
+    function renderPlayers() {
+      const list = document.getElementById('playersList');
+      list.innerHTML = '';
+      const active = players.find((p) => p.id === selectedPlayerId) || players[0];
+      if (active) {
+        selectedPlayerId = active.id;
+        document.getElementById('activePlayerName').textContent = `${active.username} (${active.email})`;
+        document.getElementById('activePlayerBalance').textContent = `R$ ${Number(active.balance).toFixed(2)}`;
+      } else {
+        document.getElementById('activePlayerName').textContent = 'Nenhum jogador';
+        document.getElementById('activePlayerBalance').textContent = 'R$ 0.00';
+      }
+
+      players.forEach((p) => {
+        const div = document.createElement('div');
+        div.className = 'list-item' + (p.id === selectedPlayerId ? ' active' : '');
+        div.innerHTML = `
+          <div style="cursor:pointer; flex:1;" onclick="selectPlayer('${p.id}')">
+            <div style="font-weight:600; font-size:13px;">${p.username}</div>
+            <div style="font-size:12px; color:var(--primary);">Saldo: R$ ${Number(p.balance).toFixed(2)}</div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="btn-edit" onclick="editPlayerBalance('${p.id}', ${p.balance})">PUT Saldo</button>
+            <button class="btn-danger" onclick="deletePlayer('${p.id}')">DELETE</button>
+          </div>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function selectPlayer(id) {
+      selectedPlayerId = id;
+      renderPlayers();
+    }
+
+    async function createPlayer() {
+      const username = document.getElementById('newUsername').value.trim();
+      const email = document.getElementById('newEmail').value.trim();
+      const balance = Number(document.getElementById('newBalance').value || 1000);
+      if (!username || !email) return alert('Preencha username e e-mail!');
+
+      const res = await fetch('/players', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, balance }),
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.message || 'Erro ao criar jogador');
+      selectedPlayerId = data.id;
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newEmail').value = '';
+      await loadPlayers();
+    }
+
+    async function editPlayerBalance(id, currentBalance) {
+      const next = prompt('Novo saldo para o jogador (PUT /players/:id -> SQL UPDATE):', currentBalance);
+      if (next === null) return;
+      const res = await fetch(`/players/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: Number(next) }),
+      });
+      if (res.ok) await loadPlayers();
+    }
+
+    async function quickTopUp() {
+      const active = players.find((p) => p.id === selectedPlayerId);
+      if (!active) return;
+      await fetch(`/players/${active.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: Number(active.balance) + 500 }),
+      });
+      await loadPlayers();
+    }
+
+    async function deletePlayer(id) {
+      if (!confirm('Deseja remover este jogador do banco (DELETE /players/:id -> SQL DELETE)?')) return;
+      await fetch(`/players/${id}`, { method: 'DELETE' });
+      if (selectedPlayerId === id) selectedPlayerId = null;
+      await loadPlayers();
+      await loadHistory();
+    }
+
+    // ===================== CRUD JOGOS =====================
+    async function loadGames() {
+      const res = await fetch('/games');
+      games = await res.json();
+      const sel = document.getElementById('gameSelector');
+      const currentSlug = sel.value || 'even-odd';
+      sel.innerHTML = '';
+      const list = document.getElementById('gamesList');
+      list.innerHTML = '';
+
+      games.forEach((g) => {
+        const opt = document.createElement('option');
+        opt.value = g.slug;
+        opt.textContent = `${g.name} [slug: ${g.slug}] (Prêmio: ${g.payoutMultiplier}x)`;
+        sel.appendChild(opt);
+
+        const item = document.createElement('div');
+        item.className = 'list-item';
+        item.innerHTML = `
+          <div>
+            <div style="font-weight:600; font-size:13px;">${g.name} <span class="sql-tag">${g.slug}</span></div>
+            <div style="font-size:11px; color:var(--muted);">Min: R$${g.minBet} | Max: R$${g.maxBet} | Multiplicador: <strong>${g.payoutMultiplier}x</strong></div>
+          </div>
+          <button class="btn-edit" onclick="editGameMultiplier('${g.id}', ${g.payoutMultiplier})">PUT Mult.</button>
+        `;
+        list.appendChild(item);
+      });
+      sel.value = currentSlug;
+      onGameChange();
+    }
+
+    async function editGameMultiplier(id, currentMult) {
+      const next = prompt('Novo Multiplicador de Prêmio (PUT /games/:id -> SQL UPDATE):', currentMult);
+      if (next === null) return;
+      await fetch(`/games/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payoutMultiplier: Number(next) }),
+      });
+      await loadGames();
+    }
+
+    function onGameChange() {
+      const slug = document.getElementById('gameSelector').value;
+      document.getElementById('evenOddControls').style.display = slug === 'even-odd' ? 'flex' : 'none';
+      document.getElementById('coinFlipControls').style.display = slug === 'coin-flip' ? 'flex' : 'none';
+      document.getElementById('diceControls').style.display = slug === 'dice' ? 'flex' : 'none';
+      socket.emit('join_game', { gameSlug: slug, playerId: selectedPlayerId });
+    }
+
+    function selectParity(choice) {
+      selectedParity = choice;
+      document.getElementById('btnEven').className = 'choice-btn' + (choice === 'EVEN' ? ' selected' : '');
+      document.getElementById('btnOdd').className = 'choice-btn' + (choice === 'ODD' ? ' selected' : '');
+    }
+
+    function selectCoin(side) {
+      selectedCoin = side;
+      document.getElementById('btnHeads').className = 'choice-btn' + (side === 'HEADS' ? ' selected' : '');
+      document.getElementById('btnTails').className = 'choice-btn' + (side === 'TAILS' ? ' selected' : '');
+    }
+
+    function selectDice(dir) {
+      selectedDice = dir;
+      document.getElementById('btnOver').className = 'choice-btn' + (dir === 'OVER' ? ' selected' : '');
+      document.getElementById('btnUnder').className = 'choice-btn' + (dir === 'UNDER' ? ' selected' : '');
+    }
+
+    function buildPlayPayload() {
+      if (!selectedPlayerId) {
+        alert('Selecione ou crie um jogador primeiro!');
+        return null;
+      }
+      const gameSlug = document.getElementById('gameSelector').value;
+      if (gameSlug === 'even-odd') {
+        return {
+          playerId: selectedPlayerId,
+          gameSlug: 'even-odd',
+          betAmount: Number(document.getElementById('betAmount').value),
+          inputPayload: {
+            choice: selectedParity,
+            playerNumber: Number(document.getElementById('playerNumber').value),
+          },
+        };
+      } else if (gameSlug === 'coin-flip') {
+        return {
+          playerId: selectedPlayerId,
+          gameSlug: 'coin-flip',
+          betAmount: Number(document.getElementById('betAmountCoin').value),
+          inputPayload: {
+            side: selectedCoin,
+          },
+        };
+      } else {
+        return {
+          playerId: selectedPlayerId,
+          gameSlug: 'dice',
+          betAmount: Number(document.getElementById('betAmountDice').value),
+          inputPayload: {
+            direction: selectedDice,
+          },
+        };
+      }
+    }
+
+    function playViaWebSocket() {
+      const payload = buildPlayPayload();
+      if (!payload) return;
+      addWsLog('emit -> play_round', payload);
+      socket.emit('play_round', payload);
+    }
+
+    async function playViaRest() {
+      const payload = buildPlayPayload();
+      if (!payload) return;
+      const res = await fetch('/games/play', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.message || 'Erro na jogada');
+      renderRoundResult(data);
+      await loadPlayers();
+      await loadHistory();
+    }
+
+    function renderRoundResult(res) {
+      const box = document.getElementById('resultBox');
+      const won = res.status === 'WON';
+      box.className = 'result-box ' + (won ? 'won' : 'lost');
+      box.innerHTML = `
+        <div style="font-size: 20px; font-weight: 800; color: ${won ? 'var(--primary)' : 'var(--danger)'}; margin-bottom: 6px;">
+          ${won ? `🏆 VOCÊ VENCEU! (+R$ ${res.payoutAmount.toFixed(2)})` : `💥 VOCÊ PERDEU (-R$ ${res.betAmount.toFixed(2)})`}
+        </div>
+        <div style="font-size: 15px; margin-bottom: 10px;">
+          ${res.resultPayload.explanation}
+        </div>
+        <div style="font-size: 11px; color: var(--muted); font-family: monospace; word-break: break-all;">
+          🔒 Hash SHA-256 (Provably Fair): ${res.provablyFairHash}
+        </div>
+      `;
+    }
+
+    async function loadHistory() {
+      const res = await fetch('/games/rounds/history?limit=15');
+      const rounds = await res.json();
+      const box = document.getElementById('roundsHistory');
+      box.innerHTML = '';
+      rounds.forEach((r) => {
+        const won = r.status === 'WON';
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.innerHTML = `
+          <div style="font-size:12px;">
+            <div>
+              <strong>${r.player?.username || 'Jogador'}</strong> em <span class="sql-tag">${r.game?.slug || 'jogo'}</span>
+              <span style="color:${won ? 'var(--primary)' : 'var(--danger)'}; font-weight:700;">
+                ${won ? `+R$${r.payoutAmount}` : `-R$${r.betAmount}`}
+              </span>
+            </div>
+            <div style="color:var(--muted); font-size:11px;">${r.resultPayload?.explanation || ''}</div>
+          </div>
+          <button class="btn-danger" onclick="deleteRound('${r.id}')">DEL</button>
+        `;
+        box.appendChild(div);
+      });
+    }
+
+    async function deleteRound(id) {
+      await fetch(`/games/rounds/${id}`, { method: 'DELETE' });
+      await loadHistory();
+    }
+
+    // Inicializa carregando dados do banco via REST
+    loadPlayers();
+    loadGames();
+    loadHistory();
+  </script>
+</body>
+</html>
